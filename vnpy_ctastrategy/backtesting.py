@@ -76,7 +76,7 @@ class BacktestingEngine:
         self.interval: Interval
         self.days: int = 0
         self.callback: Callable
-        self.history_data: list = []
+        self.history_data: list = []    # 历史上的K线数据
 
         self.stop_order_count: int = 0
         self.stop_orders: dict[str, StopOrder] = {}
@@ -215,36 +215,30 @@ class BacktestingEngine:
         self.output(_("历史数据加载完成，数据量：{}").format(len(self.history_data)))
 
     def run_backtesting(self) -> None:
-        """"""
-        if self.mode == BacktestingMode.BAR:
-            func: Callable[[Any], None] = self.new_bar
-        else:
-            func = self.new_tick
+        func = self.new_bar if self.mode == BacktestingMode.BAR else self.new_tick
 
-        self.strategy.on_init()
+        self.strategy.on_init();
         self.strategy.inited = True
         self.output(_("策略初始化完成"))
-
-        self.strategy.on_start()
+        self.strategy.on_start();
         self.strategy.trading = True
         self.output(_("开始回放历史数据"))
 
-        total_size: int = len(self.history_data)
-        batch_size: int = max(int(total_size / 10), 1)
+        total = len(self.history_data)
+        checkpoint = max(total // 10, 1)
 
-        for ix, i in enumerate(range(0, total_size, batch_size)):
-            batch_data: list = self.history_data[i: i + batch_size]
-            for data in batch_data:
-                try:
-                    func(data)
-                except Exception:
-                    self.output(_("触发异常，回测终止"))
-                    self.output(traceback.format_exc())
-                    return
+        for idx, data in enumerate(self.history_data, 1):  # 逐条
+            try:
+                func(data)
+            except Exception:
+                self.output(_("触发异常，回测终止"))
+                self.output(traceback.format_exc())
+                return
 
-            progress = min(ix / 10, 1)
-            progress_bar: str = "=" * (ix + 1)
-            self.output(_("回放进度：{} [{:.0%}]").format(progress_bar, progress))
+            if idx % checkpoint == 0 or idx == total:
+                progress = idx / total
+                bar = "=" * int(progress * 10)
+                self.output(_("回放进度：{} [{:.0%}]").format(bar, progress))
 
         self.strategy.on_stop()
         self.output(_("历史数据回放结束"))
